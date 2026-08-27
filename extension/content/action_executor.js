@@ -46,6 +46,10 @@
   function isElementInteractable(el) {
     if (!el || !(el instanceof Element)) return false;
     if (!el.isConnected) return false;
+    if (typeof el.closest === 'function' && (el.closest('#rakshak-agent-overlay-root') || el.closest('[data-rakshak-overlay]'))) return false;
+    if (el.id === 'rakshak-agent-overlay-root') return false;
+    if (typeof el.hasAttribute === 'function' && el.hasAttribute('data-rakshak-overlay')) return false;
+    if (typeof el.getAttribute === 'function' && el.getAttribute('data-rakshak-overlay')) return false;
 
     const style = window.getComputedStyle(el);
     if (
@@ -371,6 +375,26 @@
           el.click();
         }
 
+        // If element is inside an anchor tag, trigger anchor click for SPA navigation
+        const anchor = (el.tagName === 'A' ? el : (typeof el.closest === 'function' ? el.closest('a') : null));
+        if (anchor) {
+          if (typeof anchor.click === 'function' && anchor !== el) {
+            anchor.click();
+          }
+
+          if (anchor.href && (anchor.href.startsWith('http://') || anchor.href.startsWith('https://'))) {
+            const currentUrl = window.location.href;
+            const targetUrl = anchor.href;
+            if (targetUrl !== currentUrl && !targetUrl.endsWith('#')) {
+              setTimeout(() => {
+                if (window.location.href === currentUrl) {
+                  window.location.href = targetUrl;
+                }
+              }, 120);
+            }
+          }
+        }
+
         return {
           success: true,
           action: 'CLICK',
@@ -440,6 +464,7 @@
       validateAction,
       executeAction,
       findElement,
+      isElementInteractable,
       ALLOWED_ACTIONS,
       ALLOWED_KEYS
     };
@@ -467,6 +492,7 @@
       validateAction,
       executeAction,
       findElement,
+      isElementInteractable,
       ALLOWED_ACTIONS,
       ALLOWED_KEYS
     };

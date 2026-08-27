@@ -502,6 +502,8 @@ document.addEventListener('DOMContentLoaded', () => {
     handleUserSubmit();
   });
 
+  let currentAgentMsgContainer = null;
+
   async function handleUserSubmit() {
     const task = chatInput.value.trim();
     if (!task || isAgentRunning) return;
@@ -513,269 +515,82 @@ document.addEventListener('DOMContentLoaded', () => {
     chatSendBtn.disabled = true;
     chatInput.disabled = true;
 
-    const agentMsg = createAgentMessageContainer("I'll help with that.");
+    currentAgentMsgContainer = createAgentMessageContainer("I'll help with that.");
+    currentAgentMsgContainer.addProgressStep('✓', 'Task initiated with background orchestrator', 'done');
 
-    const maxSteps = DEFAULT_MAX_STEPS;
-    const stepHistory = [];
+    const serverUrl = (serverUrlInput ? serverUrlInput.value.trim().replace(/\/+$/, '') : '') || 'http://localhost:8000';
 
     try {
-      const [initialTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!initialTab || !initialTab.id) {
-        throw new Error('No active browser tab found.');
-      }
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab || !tab.id) throw new Error('No active browser tab found.');
 
-      let activeTab = initialTab;
-      const isCurrentPageRestricted = isRestrictedPage(activeTab.url);
-
-      // Check if user's prompt explicitly requests opening or navigating to a website
-      const targetNavUrl = extractNavigationGoal(task);
-
-      if (isCurrentPageRestricted) {
-        if (targetNavUrl && isSafeDestinationUrl(targetNavUrl)) {
-          // User requested navigation from an internal page (e.g. chrome://newtab -> "Open YouTube")
-          agentMsg.addProgressStep('✓', 'Preparing the browser', 'done');
-          agentMsg.addProgressStep('→', `Navigating to ${targetNavUrl}`, 'active');
-
-          await navigateActiveTab(activeTab.id, targetNavUrl);
-          await waitForTabReady(activeTab.id, 4000);
-          await new Promise((r) => setTimeout(r, 1200));
-
-          // Fetch refreshed tab state after navigation
-          activeTab = await chrome.tabs.get(activeTab.id);
-
-          if (isRestrictedPage(activeTab.url)) {
-            agentMsg.addProgressStep('✗', 'Destination page is restricted.', 'failed');
-            agentMsg.textEl.textContent = 'I could not open that destination because it is restricted by the browser.';
-            return;
-          }
-
-          agentMsg.addProgressStep('✓', `Website loaded (${new URL(activeTab.url).hostname})`, 'done');
-        } else {
-          // Current page is restricted and prompt has no explicit navigation destination
-          agentMsg.textEl.textContent = 'I can perform browser tasks on regular websites, but this page is protected by the browser. Please open or navigate to a website first, or tell me which site to open (e.g., "Open YouTube").';
-          agentMsg.addProgressStep('ℹ️', 'Active tab is an internal browser page (chrome://).', 'info');
-          agentMsg.addTechnicalDetail({
-            note: 'Restricted page detected. Browser security policy forbids DOM injection on internal schemes.',
-            activeTabUrl: activeTab.url
-          });
-          return;
+      chrome.runtime.sendMessage({
+        type: 'START_AGENT_TASK',
+        tabId: tab.id,
+        task: task,
+        maxSteps: DEFAULT_MAX_STEPS,
+        serverUrl: serverUrl
+      }, (response) => {
+        if (chrome.runtime.lastError || !response || !response.success) {
+          currentAgentMsgContainer.addProgressStep('✗', `Failed: ${chrome.runtime.lastError?.message || response?.error || 'Unknown error'}`, 'failed');
+          isAgentRunning = false;
+          chatSendBtn.disabled = false;
+          chatInput.disabled = false;
         }
-      } else if (targetNavUrl && isSafeDestinationUrl(targetNavUrl)) {
-        // Already on a standard page, but user requested navigation to a different website
-        try {
-          const currentHost = new URL(activeTab.url).hostname.replace(/^www\./, '');
-          const targetHost = new URL(targetNavUrl).hostname.replace(/^www\./, '');
-          
-          if (currentHost !== targetHost) {
-            agentMsg.addProgressStep('→', `Navigating to ${targetNavUrl}`, 'active');
-            await navigateActiveTab(activeTab.id, targetNavUrl);
-            await waitForTabReady(activeTab.id, 4000);
-            await new Promise((r) => setTimeout(r, 1200));
-            activeTab = await chrome.tabs.get(activeTab.id);
-            agentMsg.addProgressStep('✓', `Website loaded (${targetHost})`, 'done');
-          }
-        } catch (urlParseErr) {
-          // If URL parsing fails, proceed without forced navigation
-        }
-      }
-
-      const serverUrl = (serverUrlInput ? serverUrlInput.value.trim().replace(/\/+$/, '') : '') || 'http://localhost:8000';
-      let currentStep = 0;
-      let taskComplete = false;
-      let consecutiveFailures = 0;
-
-      while (currentStep < maxSteps && !taskComplete) {
-        currentStep++;
-
-        // 1. Ensure scripts and tab readiness for fresh updated DOM state
-        await waitForTabReady(activeTab.id, 2500);
-        await ensureScriptsInTab(activeTab.id);
-
-        // 2. Real DOM inspection
-        let contextResp = null;
-        try {
-          contextResp = await sendTabMessage(activeTab.id, { type: 'COLLECT_LOCAL_CONTEXT' });
-        } catch (msgErr) {
-          await new Promise((r) => setTimeout(r, 800));
-          await ensureScriptsInTab(activeTab.id);
-          contextResp = await sendTabMessage(activeTab.id, { type: 'COLLECT_LOCAL_CONTEXT' });
-        }
-
-        if (!contextResp || !contextResp.success) {
-          throw new Error('Failed to inspect active tab context.');
-        }
-
-        const localContext = contextResp.context;
-        renderContext(localContext);
-
-        if (currentStep === 1) {
-          agentMsg.addProgressStep('✓', `Inspecting current page (${localContext.totalCount || 0} elements detected)`, 'done');
-          if (localContext.sensitiveCount > 0) {
-            agentMsg.addProgressStep('✓', `Privacy Gate: Redacted ${localContext.sensitiveCount} sensitive elements locally`, 'done');
-          } else {
-            agentMsg.addProgressStep('✓', 'Checking privacy-sensitive content locally (Shield Active)', 'done');
-          }
-        }
-
-        // Quick check: If user wants media playback and media is ALREADY playing on the content page
-        const isPlayTask = /\b(play|watch|stream|listen|song|video)\b/i.test(task);
-        if (isPlayTask && localContext.mediaState?.isPlaying && stepHistory.some(h => h.action === 'CLICK' || h.action === 'TYPE')) {
-          agentMsg.addProgressStep('✓', 'Video playback confirmed active', 'done');
-          agentMsg.addProgressStep('✓', 'Task completed successfully', 'done');
-          agentMsg.textEl.textContent = 'I have found and started playing the requested video.';
-          taskComplete = true;
-          break;
-        }
-
-        // 3. Privacy Gate sanitization (Local enforcement)
-        const rawPayload = {
-          task: task,
-          page: localContext.page,
-          elements: localContext.elements,
-          sanitizedImage: latestSanitizedImage,
-          clientId: 'rakshak-extension-popup',
-          stepHistory: stepHistory,
-          currentStep: currentStep,
-          maxSteps: maxSteps
-        };
-
-        let sanitizedPayload = rawPayload;
-        if (window.__rakshakPrivacyGate && typeof window.__rakshakPrivacyGate.validateAndSanitizePayload === 'function') {
-          const gateResult = window.__rakshakPrivacyGate.validateAndSanitizePayload(rawPayload);
-          sanitizedPayload = gateResult.sanitizedPayload;
-        }
-
-        // 4. Backend AI Reasoning
-        const res = await fetch(`${serverUrl}/api/v1/act`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sanitizedPayload)
-        });
-
-        if (!res.ok) {
-          const errBody = await res.text();
-          throw new Error(`Server error (${res.status}): ${errBody || res.statusText}`);
-        }
-
-        const aiDecision = await res.json();
-        agentMsg.addTechnicalDetail({ step: currentStep, decision: aiDecision });
-
-        // 5. Local Action Validation
-        const validationResp = await sendTabMessage(activeTab.id, {
-          type: 'VALIDATE_LOCAL_ACTION',
-          action: aiDecision
-        });
-
-        if (!validationResp || !validationResp.valid) {
-          const errMsg = validationResp?.error || 'Local safety validation rejected the action';
-          agentMsg.addProgressStep('✗', `Validation note: ${errMsg}`, 'failed');
-
-          consecutiveFailures++;
-          stepHistory.push({
-            step: currentStep,
-            action: aiDecision.action || 'INVALID',
-            target: aiDecision.target?.elementId || aiDecision.target?.selector || '',
-            result: 'Validation Failed',
-            message: errMsg
-          });
-
-          if (consecutiveFailures >= 3) {
-            agentMsg.addProgressStep('⚠️', 'Execution halted for safety compliance.', 'failed');
-            break;
-          }
-          continue;
-        }
-
-        consecutiveFailures = 0;
-
-        // 6. Check STOP & Local Goal Verification
-        if (aiDecision.action === 'STOP') {
-          const verification = verifyGoalCompletionLocally(task, stepHistory, localContext);
-          if (!verification.completed) {
-            agentMsg.addProgressStep('→', `Continuing: ${verification.reason}`, 'info');
-            stepHistory.push({
-              step: currentStep,
-              action: 'STOP_REJECTED',
-              target: '',
-              result: 'Rejected',
-              message: `Goal not yet verified: ${verification.reason}. You must choose the next actionable step.`
-            });
-
-            consecutiveFailures++;
-            if (consecutiveFailures >= 3) {
-              agentMsg.addProgressStep('✓', 'Task completed to the extent possible.', 'done');
-              break;
-            }
-            continue;
-          }
-
-          agentMsg.addProgressStep('✓', 'Task completed successfully', 'done');
-          agentMsg.textEl.textContent = 'I have completed your task.';
-          taskComplete = true;
-          break;
-        }
-
-        // 7. Local Action Execution
-        const humanActionText = formatHumanAction(aiDecision, task);
-        const execResult = await sendTabMessage(activeTab.id, {
-          type: 'EXECUTE_LOCAL_ACTION',
-          action: aiDecision
-        });
-
-        const targetName = aiDecision.target?.elementId || aiDecision.target?.selector || (aiDecision.action === 'KEY' ? aiDecision.key : '');
-
-        if (execResult && execResult.success) {
-          agentMsg.addProgressStep('✓', humanActionText, 'done');
-
-          stepHistory.push({
-            step: currentStep,
-            action: aiDecision.action,
-            target: targetName,
-            value: aiDecision.value || aiDecision.key || '',
-            result: 'Success',
-            message: execResult.message
-          });
-
-          // Wait dynamic duration for DOM updates, network transitions, video player initialization, or URL changes
-          if (aiDecision.action === 'CLICK' || aiDecision.action === 'TYPE' || aiDecision.action === 'KEY') {
-            await new Promise((r) => setTimeout(r, 1800));
-          } else {
-            await new Promise((r) => setTimeout(r, 1000));
-          }
-        } else {
-          const failMsg = execResult?.message || 'Action could not be applied';
-          agentMsg.addProgressStep('✗', `${humanActionText} (${failMsg})`, 'failed');
-
-          stepHistory.push({
-            step: currentStep,
-            action: aiDecision.action,
-            target: targetName,
-            result: 'Failed',
-            message: failMsg
-          });
-
-          consecutiveFailures++;
-          if (consecutiveFailures >= 3) {
-            agentMsg.addProgressStep('⚠️', 'Stopping after consecutive execution issues.', 'failed');
-            break;
-          }
-        }
-      }
-
-      if (currentStep >= maxSteps && !taskComplete) {
-        agentMsg.addProgressStep('✓', `Completed maximum allowed steps (${maxSteps}).`, 'done');
-        agentMsg.textEl.textContent = 'I finished running the requested workflow steps.';
-      }
+      });
     } catch (err) {
-      agentMsg.addProgressStep('✗', `Error: ${err.message}`, 'failed');
-      agentMsg.textEl.textContent = 'Encountered an issue while executing the task.';
-    } finally {
+      currentAgentMsgContainer.addProgressStep('✗', `Error: ${err.message}`, 'failed');
       isAgentRunning = false;
       chatSendBtn.disabled = false;
       chatInput.disabled = false;
-      chatInput.focus();
     }
   }
+
+  // Listen for state updates from background service worker
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === 'AGENT_STATE_UPDATED' && message.state) {
+      const state = message.state;
+      isAgentRunning = state.isRunning;
+      chatSendBtn.disabled = state.isRunning;
+      chatInput.disabled = state.isRunning;
+
+      if (state.logs && state.logs.length > 0) {
+        if (!currentAgentMsgContainer) {
+          currentAgentMsgContainer = createAgentMessageContainer(state.task ? `Working on: "${state.task}"` : undefined);
+        }
+        currentAgentMsgContainer.progressBox.innerHTML = '';
+        state.logs.forEach((log) => {
+          currentAgentMsgContainer.addProgressStep(log.icon || '✓', log.text || '', log.statusClass || 'done');
+        });
+        if (state.technicalLogs && state.technicalLogs.length > 0) {
+          currentAgentMsgContainer.detailsContent.textContent = JSON.stringify(state.technicalLogs, null, 2);
+          currentAgentMsgContainer.detailsToggle.style.display = 'flex';
+        }
+      }
+
+      if (state.finalMessage && currentAgentMsgContainer) {
+        currentAgentMsgContainer.textEl.textContent = state.finalMessage;
+      }
+    }
+  });
+
+  // Sync state on popup open
+  chrome.runtime.sendMessage({ type: 'GET_AGENT_STATE' }, (response) => {
+    if (response && response.state && response.state.logs && response.state.logs.length > 0) {
+      const state = response.state;
+      isAgentRunning = state.isRunning;
+      chatSendBtn.disabled = state.isRunning;
+      chatInput.disabled = state.isRunning;
+
+      currentAgentMsgContainer = createAgentMessageContainer(state.task ? `Working on: "${state.task}"` : undefined);
+      state.logs.forEach((log) => {
+        currentAgentMsgContainer.addProgressStep(log.icon || '✓', log.text || '', log.statusClass || 'done');
+      });
+      if (state.finalMessage) {
+        currentAgentMsgContainer.textEl.textContent = state.finalMessage;
+      }
+    }
+  });
 
   // Local generic goal verification
   function verifyGoalCompletionLocally(task, stepHistory, localContext) {
