@@ -57,6 +57,10 @@
   function isElementInteractable(el) {
     if (!el || !(el instanceof Element)) return false;
     if (!el.isConnected) return false;
+    if (typeof el.closest === 'function' && (el.closest('#rakshak-agent-overlay-root') || el.closest('[data-rakshak-overlay]'))) return false;
+    if (el.id === 'rakshak-agent-overlay-root') return false;
+    if (typeof el.hasAttribute === 'function' && el.hasAttribute('data-rakshak-overlay')) return false;
+    if (typeof el.getAttribute === 'function' && el.getAttribute('data-rakshak-overlay')) return false;
 
     const style = window.getComputedStyle(el);
     if (
@@ -238,96 +242,7 @@
     targetEl.dispatchEvent(new KeyboardEvent('keydown', eventOptions));
     targetEl.dispatchEvent(new KeyboardEvent('keypress', eventOptions));
     targetEl.dispatchEvent(new KeyboardEvent('keyup', eventOptions));
-
-    // If Enter key on form input or form itself, also check for form submission
-    if (keyName === 'ENTER') {
-      if (targetEl.form) {
-        try {
-          const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-          targetEl.form.dispatchEvent(submitEvent);
-        } catch (e) {
-          // Form dispatch fallback
-        }
-      }
-    }
   }
-
-  /**
-   * Safe Local Action Executor
-   * Executes verified browser actions using native DOM events.
-   * @param {Object} actionObj
-   * @returns {Promise<{ success: boolean, action: string, message: string, details?: any }>}
-   */
-  async function executeAction(actionObj) {
-    const validation = validateAction(actionObj);
-    if (!validation.valid) {
-      return {
-        success: false,
-        action: actionObj?.action || 'UNKNOWN',
-        message: `Validation Failed: ${validation.error}`
-      };
-    }
-
-    const actionType = validation.actionType;
-
-    try {
-      // 1. STOP Action
-      if (actionType === 'STOP') {
-        return {
-          success: true,
-          action: 'STOP',
-          message: actionObj.reason || 'Task finished by AI decision'
-        };
-      }
-
-      // 2. WAIT Action
-      if (actionType === 'WAIT') {
-        const ms = validation.duration || 1000;
-        await new Promise((resolve) => setTimeout(resolve, ms));
-        return {
-          success: true,
-          action: 'WAIT',
-          message: `Waited for ${ms}ms`
-        };
-      }
-
-      // 3. SCROLL Action
-      if (actionType === 'SCROLL') {
-        const el = validation.element;
-        const direction = String(actionObj.direction || actionObj.value || 'down').toLowerCase();
-        const scrollAmount = Math.min(Math.max(Number(actionObj.amount) || 400, 50), 1000);
-
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        } else if (direction === 'up') {
-          window.scrollBy({ top: -scrollAmount, left: 0, behavior: 'smooth' });
-        } else {
-          window.scrollBy({ top: scrollAmount, left: 0, behavior: 'smooth' });
-        }
-
-        await new Promise((r) => setTimeout(r, 200));
-        return {
-          success: true,
-          action: 'SCROLL',
-          message: `Scrolled ${el ? 'to element' : direction}`
-        };
-      }
-
-      // 4. KEY Action
-      if (actionType === 'KEY') {
-        const targetEl = validation.element || document.activeElement || document.body;
-        if (targetEl && typeof targetEl.focus === 'function') {
-          targetEl.focus();
-        }
-
-        dispatchKeyEvents(targetEl, validation.keyName);
-
-        return {
-          success: true,
-          action: 'KEY',
-          message: `Pressed key '${validation.keyName}' successfully`
-        };
-      }
 
   /**
    * Helper: Types real text into an input or textarea element safely across modern frameworks.
@@ -364,6 +279,82 @@
     const currentVal = el.value !== undefined ? el.value : el.textContent;
     return Boolean(currentVal && (currentVal === textToType || currentVal.length > 0));
   }
+
+  /**
+   * Safe declarative action executor.
+   * Dispatches only simulated browser events; NEVER executes strings via eval/Function.
+   * @param {Object} actionObj
+   * @returns {Promise<{ success: boolean, action: string, message: string, details?: any }>}
+   */
+  async function executeAction(actionObj) {
+    const validation = validateAction(actionObj);
+    if (!validation.valid) {
+      return {
+        success: false,
+        action: actionObj?.action || 'UNKNOWN',
+        message: `Action Rejected: ${validation.error}`
+      };
+    }
+
+    const actionType = validation.actionType;
+
+    try {
+      // 1. STOP Action
+      if (actionType === 'STOP') {
+        return {
+          success: true,
+          action: 'STOP',
+          message: actionObj.reason || 'Agent completed task gracefully'
+        };
+      }
+
+      // 2. WAIT Action
+      if (actionType === 'WAIT') {
+        const duration = validation.duration;
+        await new Promise((resolve) => setTimeout(resolve, duration));
+        return {
+          success: true,
+          action: 'WAIT',
+          message: `Waited for ${duration}ms`
+        };
+      }
+
+      // 3. SCROLL Action
+      if (actionType === 'SCROLL') {
+        const direction = String(actionObj.value || 'down').toLowerCase();
+        const el = validation.element;
+        const scrollAmount = Number(actionObj.amount) || 400;
+
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+          const dy = direction === 'up' ? -scrollAmount : scrollAmount;
+          window.scrollBy({ top: dy, left: 0, behavior: 'smooth' });
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return {
+          success: true,
+          action: 'SCROLL',
+          message: `Scrolled ${el ? 'to element' : direction}`
+        };
+      }
+
+      // 4. KEY Action
+      if (actionType === 'KEY') {
+        const targetEl = validation.element || document.activeElement || document.body;
+        if (targetEl && typeof targetEl.focus === 'function') {
+          targetEl.focus();
+        }
+
+        dispatchKeyEvents(targetEl, validation.keyName);
+
+        return {
+          success: true,
+          action: 'KEY',
+          message: `Pressed key '${validation.keyName}' successfully`
+        };
+      }
 
       // 5. TYPE Action
       if (actionType === 'TYPE') {
@@ -470,6 +461,26 @@
           el.click();
         }
 
+        // If element is inside an anchor tag, trigger anchor click for SPA navigation
+        const anchor = (el.tagName === 'A' ? el : (typeof el.closest === 'function' ? el.closest('a') : null));
+        if (anchor) {
+          if (typeof anchor.click === 'function' && anchor !== el) {
+            anchor.click();
+          }
+
+          if (anchor.href && (anchor.href.startsWith('http://') || anchor.href.startsWith('https://'))) {
+            const currentUrl = window.location.href;
+            const targetUrl = anchor.href;
+            if (targetUrl !== currentUrl && !targetUrl.endsWith('#')) {
+              setTimeout(() => {
+                if (window.location.href === currentUrl) {
+                  window.location.href = targetUrl;
+                }
+              }, 120);
+            }
+          }
+        }
+
         return {
           success: true,
           action: 'CLICK',
@@ -539,6 +550,7 @@
       validateAction,
       executeAction,
       findElement,
+      isElementInteractable,
       ALLOWED_ACTIONS,
       ALLOWED_KEYS
     };
@@ -566,6 +578,7 @@
       validateAction,
       executeAction,
       findElement,
+      isElementInteractable,
       ALLOWED_ACTIONS,
       ALLOWED_KEYS
     };

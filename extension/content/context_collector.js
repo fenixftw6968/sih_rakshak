@@ -76,6 +76,15 @@
     // 4. Check placeholder or title attribute
     if (el.placeholder) return el.placeholder.trim();
     if (el.title) return el.title.trim();
+    if (el.getAttribute('title')) return el.getAttribute('title').trim();
+
+    // Check child title element (e.g. YouTube video cards/thumbnails)
+    if (typeof el.querySelector === 'function') {
+      const childTitle = el.querySelector('#video-title, .video-title, [id*="title"], h3');
+      if (childTitle && childTitle.innerText && childTitle.innerText.trim().length > 0) {
+        return childTitle.innerText.trim().slice(0, 150);
+      }
+    }
 
     // 5. Check innerText for buttons, links, etc.
     if (el.innerText && el.innerText.trim().length > 0) {
@@ -121,6 +130,21 @@
    * Evaluates active media elements and playback state on the current page.
    */
   function inspectPageMediaState() {
+    const isSearchPage = (
+      window.location.pathname.includes('/results') ||
+      window.location.search.includes('search_query=') ||
+      window.location.pathname.includes('/search')
+    );
+
+    // On search results pages, background/hover preview videos do not count as active playback
+    if (isSearchPage) {
+      return {
+        hasMedia: false,
+        isPlaying: false,
+        activeMedia: null
+      };
+    }
+
     const mediaElements = Array.from(document.querySelectorAll('video, audio'));
     let isAnyPlaying = false;
     let activeMediaInfo = null;
@@ -142,8 +166,8 @@
 
     // Check for YouTube / generic media player playback state if HTML5 video state is protected
     if (!isAnyPlaying) {
-      const ytPlayer = document.querySelector('.html5-video-player, ytd-player');
-      if (ytPlayer && ytPlayer.classList.contains('playing-mode')) {
+      const ytPlayer = document.querySelector('.html5-video-player, ytd-player, #movie_player');
+      if (ytPlayer && (ytPlayer.classList.contains('playing-mode') || ytPlayer.classList.contains('ytp-autonav-endscreen-cancelled-state'))) {
         isAnyPlaying = true;
         activeMediaInfo = { tag: 'video', isYouTubePlaying: true, paused: false };
       }
@@ -178,6 +202,7 @@
       'select',
       'textarea',
       'a[href]',
+      'a[href*="/watch"]',
       'video',
       'audio',
       '[role="button"]',
@@ -187,7 +212,9 @@
       '[tabindex]:not([tabindex="-1"])',
       'form',
       'ytd-video-renderer a#thumbnail',
-      'ytd-video-renderer a#video-title'
+      'ytd-video-renderer a#video-title',
+      'ytd-rich-grid-media a',
+      'ytd-compact-video-renderer a'
     ].join(', ');
 
     const candidateElements = Array.from(document.querySelectorAll(interactiveSelectors));
@@ -195,6 +222,20 @@
     let elementIdCounter = 1;
 
     for (const el of candidateElements) {
+      // Exclude Rakshak overlay itself
+      if (typeof el.closest === 'function' && (el.closest('#rakshak-agent-overlay-root') || el.closest('[data-rakshak-overlay]'))) {
+        continue;
+      }
+      if (el.id === 'rakshak-agent-overlay-root') {
+        continue;
+      }
+      if (typeof el.hasAttribute === 'function' && el.hasAttribute('data-rakshak-overlay')) {
+        continue;
+      }
+      if (typeof el.getAttribute === 'function' && el.getAttribute('data-rakshak-overlay')) {
+        continue;
+      }
+
       if (!isElementVisible(el)) {
         continue;
       }

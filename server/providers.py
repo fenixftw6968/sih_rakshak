@@ -52,6 +52,10 @@ CRITICAL PRIVACY & CREDENTIAL HANDLING RULES:
 
 CRITICAL MULTI-STEP REASONING RULES:
 1. NEVER return "STOP" on the first step or immediately after typing/searching if the user requested a multi-step task (e.g. searching and opening/playing a video or logging in).
+=======
+CRITICAL MULTI-STEP REASONING RULES:
+1. NEVER return "STOP" on the first step or immediately after typing/searching if the user requested a multi-step task (e.g. searching and opening/playing a video or finding an item).
+>>>>>>> origin/main
 2. If the user's goal involves finding, playing, or watching a song, video, tutorial, or item:
    - Step 1 (Search Box found): "TYPE" the search query into the search input with key="ENTER".
    - Step 2 (Search results loaded): Do NOT STOP. Inspect the newly loaded search results and "CLICK" the most relevant thumbnail, title, or link.
@@ -59,18 +63,30 @@ CRITICAL MULTI-STEP REASONING RULES:
    - Step 4 (Media playing or content reached): Only now return "STOP" when the video is playing or the goal is fully achieved.
 3. If search was just typed in a previous step, but results have not yet loaded:
    - If a search button exists, "CLICK" the search button, or use "KEY" with key="ENTER" on the search input, or "WAIT".
+<<<<<<< HEAD
 4. Distinguish between "an individual action succeeded (e.g. credentials typed)" vs "the user's overall goal is completed (e.g. logged in)". Only return "STOP" when the final intended goal has genuinely been achieved on the page.
 5. If the goal is not yet completed, you MUST select an action ("FILL_CREDENTIALS", "TYPE", "CLICK", "KEY", "SCROLL", "PLAY", "WAIT") on an interactable element from the provided list.
 
 You must output ONLY a valid JSON object matching this schema:
 {
   "action": "CLICK" | "TYPE" | "KEY" | "SCROLL" | "WAIT" | "STOP" | "PLAY" | "FILL_CREDENTIALS" | "FILL_EMAIL" | "FILL_PASSWORD",
+=======
+4. Distinguish between "an individual action succeeded (e.g. query typed)" vs "the user's overall goal is completed (e.g. video playing)". Only return "STOP" when the final intended goal has genuinely been achieved on the page.
+5. If the goal is not yet completed, you MUST select an action ("TYPE", "CLICK", "KEY", "SCROLL", "PLAY", "WAIT") on an interactable element from the provided list.
+
+You must output ONLY a valid JSON object matching this schema:
+{
+  "action": "CLICK" | "TYPE" | "KEY" | "SCROLL" | "WAIT" | "STOP" | "PLAY",
+>>>>>>> origin/main
   "target": {
     "elementId": "<exact id of target element from available elements list>",
     "selector": "<css selector if available>"
   },
+<<<<<<< HEAD
   "emailTarget": "<elementId of email/username input if FILL_CREDENTIALS>",
   "passwordTarget": "<elementId of password input if FILL_CREDENTIALS>",
+=======
+>>>>>>> origin/main
   "value": "<text to type if action is TYPE, direction 'up'/'down' if SCROLL, or null>",
   "key": "<key name like ENTER, ESCAPE, TAB if action is KEY or included with TYPE, or null>",
   "reason": "<clear explanation of why this specific action was chosen to progress toward the user goal>"
