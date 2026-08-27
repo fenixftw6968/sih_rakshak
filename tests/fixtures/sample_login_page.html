@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Rakshak Test Login Form</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    .form-group { margin-bottom: 12px; }
+    .hidden-field { display: none; }
+    .invisible-field { visibility: hidden; }
+    .zero-size { width: 0; height: 0; overflow: hidden; }
+  </style>
+</head>
+<body>
+  <h1>Account Sign In</h1>
+  <form id="loginForm" action="#" method="POST">
+    <div class="form-group">
+      <label for="username">Email Address</label>
+      <input type="email" id="username" name="email" placeholder="user@example.com" value="john.doe@testmail.com" />
+    </div>
+
+    <div class="form-group">
+      <label for="password">Password</label>
+      <input type="password" id="password" name="pwd" placeholder="Enter password" />
+    </div>
+
+    <div class="form-group">
+      <label for="ssn">Social Security / National ID</label>
+      <input type="text" id="ssn" name="ssn_number" placeholder="XXX-XX-XXXX" />
+    </div>
+
+    <div class="form-group">
+      <input type="checkbox" id="rememberMe" name="remember" />
+      <label for="rememberMe">Remember my device</label>
+    </div>
+
+    <div class="form-group">
+      <button type="submit" id="submitBtn">Sign In</button>
+      <button type="button" id="cancelBtn">Cancel</button>
+    </div>
+
+    <!-- Hidden elements that must NOT be extracted -->
+    <div class="hidden-field">
+      <input type="text" id="hiddenInput1" name="tracking_id" value="secret_tracking_123" />
+    </div>
+    <div class="invisible-field">
+      <button id="invisibleBtn">Invisible Action</button>
+    </div>
+    <input type="hidden" name="csrf_token" id="csrfToken" value="xyz987" />
+  </form>
+</body>
+</html>
