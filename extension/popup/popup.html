@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rakshak Privacy Agent</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo-section">
+        <div class="logo-icon">🛡️</div>
+        <div>
+          <div class="title">Rakshak</div>
+          <div class="subtitle">Privacy Vision Agent</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div id="statusBadge" class="status-badge checking" title="Rakshak server connection status">
+          <div class="status-dot"></div>
+          <span id="statusText">Connecting</span>
+        </div>
+        <button id="devToggleBtn" class="icon-btn" title="Diagnostics & Settings" aria-label="Settings">⚙️</button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-bar">
+      <button class="nav-tab active" data-tab="chatTab" id="tabChatBtn">
+        <span class="tab-icon">💬</span>
+        <span>Agent</span>
+      </button>
+      <button class="nav-tab" data-tab="inspectTab" id="tabInspectBtn">
+        <span class="tab-icon">🔍</span>
+        <span>Inspect</span>
+      </button>
+      <button class="nav-tab" data-tab="privacyTab" id="tabPrivacyBtn">
+        <span class="tab-icon">🛡️</span>
+        <span>Privacy</span>
+      </button>
+    </nav>
+
+    <!-- Privacy Banner -->
+    <div class="privacy-banner">
+      <span class="privacy-shield">🔒</span>
+      <span>Local Privacy Shield Active &bull; Zero raw PII leaves browser</span>
+    </div>
+
+    <!-- MAIN VIEWS -->
+    <main class="main-content">
+      <!-- 1. CHAT TAB (Default View) -->
+      <section id="chatTab" class="tab-pane active">
+        <div id="chatMessages" class="chat-container">
+          <!-- Initial welcome message -->
+          <div class="chat-msg agent-msg">
+            <div class="msg-avatar">🛡️</div>
+            <div class="msg-bubble">
+              <div class="msg-sender">Rakshak Agent</div>
+              <div class="msg-text">Hello! I can interact with web pages and perform tasks while protecting your private data. What would you like me to do?</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Input Form -->
+        <div class="chat-input-wrapper">
+          <div class="chat-input-box">
+            <input type="text" id="chatInput" placeholder="Ask Rakshak to perform a task..." autocomplete="off" />
+            <button id="chatSendBtn" class="send-btn" title="Send task" aria-label="Send">
+              <span class="send-icon">➤</span>
+            </button>
+          </div>
+          <div class="chat-hint">Press Enter to send &bull; All reasoning executed with local redaction</div>
+        </div>
+      </section>
+
+      <!-- 2. INSPECT TAB -->
+      <section id="inspectTab" class="tab-pane" style="display: none;">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Active Tab Inspection</div>
+            <div class="panel-desc">Real-time local DOM structural analysis</div>
+          </div>
+          <button id="collectContextBtn" class="btn btn-secondary btn-sm">
+            <span>🔄 Re-Inspect</span>
+          </button>
+        </div>
+
+        <div id="inspectLoading" class="empty-state" style="display: none;">
+          <div class="spinner"></div>
+          <div>Inspecting active tab DOM...</div>
+        </div>
+
+        <div id="contextResults" style="display: none;">
+          <div class="info-grid">
+            <div class="info-item">
+              <div class="info-label">Page Title</div>
+              <div class="info-val" id="pageTitleVal">-</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Interactive Elements</div>
+              <div class="info-val" id="elementsCountVal">0</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Sensitive Elements</div>
+              <div class="info-val" id="sensitiveCountVal" style="color: #f85149;">0 Detected</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Privacy Shield</div>
+              <div class="info-val" style="color: #3fb950;">🔒 Local Only</div>
+            </div>
+          </div>
+
+          <div class="section-subhead">Detected Interactive Items:</div>
+          <div id="elementsList" class="elements-list"></div>
+        </div>
+
+        <div id="inspectEmptyState" class="empty-state">
+          <div class="empty-icon">🔍</div>
+          <div id="inspectEmptyText">Click <strong>Re-Inspect</strong> to analyze interactive elements on the current tab.</div>
+        </div>
+      </section>
+
+      <!-- 3. PRIVACY TAB -->
+      <section id="privacyTab" class="tab-pane" style="display: none;">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Privacy & Visual Redaction</div>
+            <div class="panel-desc">Local client-side PII detection & pixel masking</div>
+          </div>
+          <button id="redactPreviewBtn" class="btn btn-secondary btn-sm">
+            <span>🎨 Run Redaction</span>
+          </button>
+        </div>
+
+        <div class="privacy-info-card">
+          <div class="privacy-guarantee">
+            <span class="lock-symbol">🔒</span>
+            <div>
+              <strong>100% Client-Side Protection</strong>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                Sensitive data (passwords, emails, tokens, cards) is detected & masked directly in your browser before any AI reasoning occurs.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="privacyLoading" class="empty-state" style="display: none;">
+          <div class="spinner"></div>
+          <div>Capturing & masking sensitive regions locally...</div>
+        </div>
+
+        <div id="redactionImageContainer" style="display: none; margin-top: 10px;">
+          <div class="preview-header">
+            <span>SANITIZED CLIENT PREVIEW</span>
+            <span id="redactedBadgesCount" class="badge-redacted">0 REDACTIONS</span>
+          </div>
+          <div class="preview-img-wrapper">
+            <img id="sanitizedPreviewImg" alt="Sanitized screen preview" />
+          </div>
+        </div>
+
+        <div id="privacyEmptyState" class="empty-state">
+          <div class="empty-icon">🛡️</div>
+          <div id="privacyEmptyText">Click <strong>Run Redaction</strong> to capture a visual snapshot with sensitive regions masked locally.</div>
+        </div>
+      </section>
+
+      <!-- 4. DIAGNOSTICS / DEVELOPER DRAWER (Hidden by default) -->
+      <section id="diagnosticsDrawer" class="diagnostics-drawer" style="display: none;">
+        <div class="drawer-header">
+          <div class="drawer-title">⚙️ Diagnostics & Server Config</div>
+          <button id="closeDrawerBtn" class="icon-btn" title="Close" aria-label="Close">✕</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Server Connection</div>
+          <div class="form-group">
+            <label for="serverUrlInput">Backend URL</label>
+            <div style="display: flex; gap: 6px;">
+              <input type="text" id="serverUrlInput" placeholder="http://localhost:8000" style="flex: 1;" />
+              <button id="testConnBtn" class="btn btn-secondary btn-sm">
+                <span>Test</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" id="serverInfoCard" style="display: none; margin-top: 8px;">
+          <div class="card-title">Server Telemetry</div>
+          <div class="info-grid">
+            <div class="info-item">
+              <div class="info-label">Latency</div>
+              <div class="info-val" id="latencyVal">-</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Provider</div>
+              <div class="info-val" id="providerVal">-</div>
+            </div>
+            <div class="info-item" style="grid-column: span 2;">
+              <div class="info-label">HF Primary Model</div>
+              <div class="info-val" id="hfVal">-</div>
+            </div>
+            <div class="info-item" style="grid-column: span 2;">
+              <div class="info-label">Gemini Fallback</div>
+              <div class="info-val" id="geminiVal">-</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="../privacy_gate/privacy_gate.js"></script>
+  <script src="safe_navigator.js" type="module"></script>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>
